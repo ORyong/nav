@@ -78,11 +78,11 @@
               @action="handleAction"
               @editTitle="editTitle"
               @editFooter="editFooter"
-              @toggleTheme="$emit('toggleTheme')"
-                         @toggleSearch="$emit('toggleSearch')"
-                         @toggleHideEmpty="$emit('toggleHideEmpty')"
-                         @togglePublicMode="$emit('togglePublicMode')"
-                       />
+              @setThemeMode="$emit('setThemeMode', $event)"
+              @toggleSearch="$emit('toggleSearch')"
+              @toggleHideEmpty="$emit('toggleHideEmpty')"
+              @togglePublicMode="$emit('togglePublicMode')"
+            />
           </div>
         </div>
       </div>
@@ -97,6 +97,10 @@ import DataSettings from './settings/DataSettings.vue'
 import AboutSettings from './settings/AboutSettings.vue'
 
 const props = defineProps({
+  themeMode: {
+    type: String,
+    default: 'system'
+  },
   isDark: {
     type: Boolean,
     default: false
@@ -128,10 +132,14 @@ const props = defineProps({
   activeSettingsTab: {
     type: String,
     default: 'appearance'
+  },
+  emptyCategoryCount: {
+    type: Number,
+    default: 0
   }
 })
 
-const emit = defineEmits(['action', 'close', 'toggleTheme', 'toggleSearch', 'toggleHideEmpty', 'togglePublicMode', 'updateTitle', 'updateFooter', 'editTitle', 'editFooter', 'setActiveTab'])
+const emit = defineEmits(['action', 'close', 'setThemeMode', 'toggleSearch', 'toggleHideEmpty', 'togglePublicMode', 'updateTitle', 'updateFooter', 'editTitle', 'editFooter', 'setActiveTab'])
 
 const menuItems = ref([
   { id: 'appearance', name: '外观设置', icon: '🎨' },
@@ -156,6 +164,7 @@ const currentSettingsComponent = computed(() => {
 })
 
 const componentProps = computed(() => ({
+  themeMode: props.themeMode,
   isDark: props.isDark,
   showSearch: props.showSearch,
   hideEmptyCategories: props.hideEmptyCategories,
@@ -163,7 +172,8 @@ const componentProps = computed(() => ({
   customTitle: props.customTitle,
   footerContent: props.footerContent,
   totalBookmarks: totalBookmarks.value,
-  privateBookmarks: privateBookmarks.value
+  privateBookmarks: privateBookmarks.value,
+  emptyCategoryCount: props.emptyCategoryCount
 }))
 
 const open = () => {

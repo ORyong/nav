@@ -5,17 +5,26 @@
       <div class="header-content">
         <h1 class="app-title">{{ customTitle }}</h1>
         
-        <!-- 移动端汉堡菜单按钮 -->
-        <button class="mobile-menu-btn" @click="showMobileMenu = !showMobileMenu">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
-            <path d="M3 12h18M3 6h18M3 18h18"/>
-          </svg>
+        <!-- 未登录状态：直接显示登录按钮 -->
+        <button 
+          v-if="!isAuthenticated"
+          class="btn btn-primary"
+          @click="loginModal.open(); showMobileMenu = false"
+        >
+          登录
         </button>
         
-        <!-- 桌面端/移动端展开的操作按钮 -->
-        <div class="header-actions" :class="{ 'mobile-menu-open': showMobileMenu }">
-          <!-- Admin Controls in Header -->
-          <template v-if="isAuthenticated">
+        <!-- 已登录状态：显示汉堡菜单按钮 -->
+        <template v-else>
+          <button class="mobile-menu-btn" @click.stop="showMobileMenu = !showMobileMenu">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+              <path d="M3 12h18M3 6h18M3 18h18"/>
+            </svg>
+          </button>
+          
+          <!-- 桌面端/移动端展开的操作按钮 -->
+          <div class="header-actions" :class="{ 'mobile-menu-open': showMobileMenu }">
+            <!-- Admin Controls in Header -->
             <button 
               class="btn btn-secondary"
               @click="settingsPage.open(); showMobileMenu = false"
@@ -38,23 +47,15 @@
               </svg>
               <span>{{ isEditMode ? '完成' : '编辑' }}</span>
             </button>
-          </template>
-          
-          <button 
-            v-if="!isAuthenticated" 
-            class="btn btn-primary"
-            @click="loginModal.open(); showMobileMenu = false"
-          >
-            登录
-          </button>
-          <button 
-            v-else 
-            class="btn btn-secondary"
-            @click="handleLogout(); showMobileMenu = false"
-          >
-            退出
-          </button>
-        </div>
+            
+            <button 
+              class="btn btn-secondary"
+              @click="handleLogout(); showMobileMenu = false"
+            >
+              退出
+            </button>
+          </div>
+        </template>
       </div>
       
       <div v-if="showSearch" class="header-search">
@@ -66,8 +67,20 @@
       <!-- Edit Mode Toolbar -->
       <EditModeToolbar 
         :is-edit-mode="isEditMode"
+        :is-batch-mode="isBatchMode"
+        :selected-count="selectedCount"
+        :selected-category-count="selectedCategoryCount"
+        :has-bookmarks="bookmarks.length > 0"
         @addBookmark="handleAddBookmark"
         @addCategory="handleAddCategory"
+        @toggleBatchMode="handleToggleBatchMode"
+        @selectAll="handleSelectAll"
+        @deselectAll="handleDeselectAll"
+        @invertSelection="handleInvertSelection"
+        @batchMove="handleBatchMove"
+        @batchEdit="handleBatchEdit"
+        @batchDelete="handleBatchDelete"
+        @batchDeleteCategories="handleBatchDeleteCategories"
       />
     </header>
     
@@ -95,13 +108,29 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
           <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
         </svg>
-        <p>还没有分类</p>
-        <p v-if="isAuthenticated" style="font-size: 0.9rem; margin-top: 0.5rem;">
-          点击右上角 ⚙️ 设置按钮开始添加
+        <p>还没有分类和书签</p>
+        <p v-if="isAuthenticated" style="font-size: 0.9rem; margin-top: 0.5rem; color: var(--text-secondary);">
+          点击右上角 <strong style="color: var(--primary);">⚙️ 设置</strong> → <strong style="color: var(--primary);">📊 数据管理</strong> → <strong style="color: var(--primary);">导入书签</strong>
+        </p>
+        <p v-if="isAuthenticated" style="font-size: 0.875rem; margin-top: 0.75rem; color: var(--text-tertiary);">
+          或点击 <strong style="color: var(--primary);">✏️ 编辑</strong> 按钮手动添加
         </p>
         <p v-else style="font-size: 0.9rem; margin-top: 0.5rem;">
           请先登录以管理书签
         </p>
+        <button 
+          v-if="isAuthenticated" 
+          class="btn btn-primary" 
+          @click="settingsPage.open(); setActiveSettingsTab('data')" 
+          style="margin-top: 1.5rem;"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" style="width: 18px; height: 18px;">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="17 8 12 3 7 8"/>
+            <line x1="12" y1="3" x2="12" y2="15"/>
+          </svg>
+          快速导入书签
+        </button>
       </div>
       
       <div v-else class="categories-container">
@@ -112,11 +141,16 @@
           :category="category"
           :bookmarks="bookmarksByCategory[category.id] || []"
           :is-edit-mode="isEditMode"
+          :is-batch-mode="isBatchMode"
+          :selected-ids="selectedIds"
+          :selected-category-ids="selectedCategoryIds"
           @edit-category="handleEditCategory"
           @delete-category="handleDeleteCategory"
           @edit-bookmark="handleEditBookmark"
           @delete-bookmark="handleDeleteBookmark"
           @reorder-bookmarks="handleReorderBookmarks"
+          @toggle-selection="handleToggleSelection"
+          @toggle-category-selection="handleToggleCategorySelection"
         />
       </div>
     </main>
@@ -136,10 +170,12 @@
     <PromptDialog ref="promptDialog" />
     <FooterEditDialog ref="footerEditDialog" />
     <ImportExportDialog ref="importExportDialog" />
+    <BatchOperationDialog ref="batchOperationDialog" />
     
     <!-- Settings Page -->
     <SettingsPage 
       ref="settingsPage"
+      :theme-mode="themeMode"
       :is-dark="isDark"
       :bookmarks="bookmarks"
       :show-search="showSearch"
@@ -148,8 +184,9 @@
       :custom-title="customTitle"
       :footer-content="footerContent"
       :active-settings-tab="activeSettingsTab"
+      :empty-category-count="emptyCategoryCount"
       @action="handleSettingsAction"
-      @toggle-theme="toggleTheme"
+      @set-theme-mode="setThemeMode"
       @toggle-search="toggleSearch"
       @toggle-hide-empty="toggleHideEmptyCategories"
       @toggle-public-mode="togglePublicMode"
@@ -157,7 +194,7 @@
       @update-footer="updateFooterContent"
       @editTitle="handleEditTitle"
       @editFooter="handleEditFooter"
-      @setActiveTab="setActiveSettingsTab"
+      @setActiveTab="handleSettingsTabChange"
     />
     
     <!-- Update Notification -->
@@ -169,9 +206,10 @@
 </template>
 
 <script setup>
-import { ref, onMounted, watch, computed } from 'vue'
+import { ref, onMounted, onUnmounted, watch, computed } from 'vue'
 import { useAuth } from './composables/useAuth'
 import { useBookmarks } from './composables/useBookmarks'
+import { useBatchOperations } from './composables/useBatchOperations'
 import { useTheme } from './composables/useTheme'
 import { useSettings } from './composables/useSettings'
 import { useToast } from './composables/useToast'
@@ -187,6 +225,7 @@ import ConfirmDialog from './components/ConfirmDialog.vue'
 import PromptDialog from './components/PromptDialog.vue'
 import FooterEditDialog from './components/FooterEditDialog.vue'
 import ImportExportDialog from './components/ImportExportDialog.vue'
+import BatchOperationDialog from './components/BatchOperationDialog.vue'
 import UpdateNotification from './components/UpdateNotification.vue'
 import ToastNotification from './components/ToastNotification.vue'
 
@@ -194,6 +233,7 @@ const { isAuthenticated, logout, onAuthChange } = useAuth()
 const {
   categories,
   bookmarks,
+  filteredBookmarks,
   bookmarksByCategory,
   fetchData,
   addCategory,
@@ -201,23 +241,54 @@ const {
   deleteCategory,
   updateBookmark,
   deleteBookmark,
-  reorderItems
+  reorderItems,
+  batchOperation,
+  getEmptyCategories,
+  cleanupEmptyCategories
 } = useBookmarks()
-const { isDark, toggleTheme, loadThemeFromDB } = useTheme()
+const { themeMode, isDark, setThemeMode, toggleTheme, loadThemeFromDB } = useTheme()
 const { showSearch, hideEmptyCategories, customTitle, footerContent, activeSettingsTab, publicMode, toggleSearch, toggleHideEmptyCategories, togglePublicMode, updateCustomTitle, updateFooterContent, setActiveSettingsTab, loadSettingsFromDB } = useSettings()
 const { setToastInstance, success: toastSuccess, error: toastError } = useToast()
+const {
+  isBatchMode,
+  selectedCount,
+  selectedCategoryCount,
+  toggleBatchMode,
+  toggleBookmarkSelection,
+  toggleCategorySelection,
+  selectAll,
+  deselectAll,
+  invertSelection,
+  getSelectedIds,
+  getSelectedCategoryIds,
+  clearSelection,
+  clearCategorySelection
+} = useBatchOperations()
 
 const loading = ref(true)
 const isEditMode = ref(false)
 const showMobileMenu = ref(false)
+const emptyCategoryCount = ref(0)
 const loginModal = ref(null)
 const bookmarkDialog = ref(null)
 const confirmDialog = ref(null)
 const promptDialog = ref(null)
 const footerEditDialog = ref(null)
 const importExportDialog = ref(null)
+const batchOperationDialog = ref(null)
 const settingsPage = ref(null)
 const toast = ref(null)
+
+const selectedIds = computed(() => getSelectedIds())
+const selectedCategoryIds = computed(() => getSelectedCategoryIds())
+
+const handleSettingsTabChange = (tab) => {
+  setActiveSettingsTab(tab)
+  // 切换到数据管理标签时检查空分类
+  if (tab === 'data' && isAuthenticated.value) {
+    checkEmptyCategories()
+  }
+}
 
 onMounted(async () => {
   await fetchData()
@@ -231,18 +302,40 @@ onMounted(async () => {
     setToastInstance(toast.value)
   }
   
+  // 如果已登录，检查空分类数量
+  if (isAuthenticated.value) {
+    checkEmptyCategories()
+  }
+  
   // 监听登录状态变化，重新获取数据
   onAuthChange(async () => {
     await fetchData()
     // 登录后重新加载设置（确保获取最新数据）
     await loadSettingsFromDB()
     await loadThemeFromDB()
+    // 登录后检查空分类
+    if (isAuthenticated.value) {
+      checkEmptyCategories()
+    }
   })
   
   // 监听自定义标题变化，更新页面标题
   watch(customTitle, (newTitle) => {
     document.title = newTitle
   }, { immediate: true })
+  
+  // 点击外部关闭汉堡菜单
+  const handleClickOutside = (event) => {
+    if (showMobileMenu.value && !event.target.closest('.header-content')) {
+      showMobileMenu.value = false
+    }
+  }
+  document.addEventListener('click', handleClickOutside)
+  
+  // 清理事件监听
+  onUnmounted(() => {
+    document.removeEventListener('click', handleClickOutside)
+  })
 })
 
 const handleLogout = async () => {
@@ -260,6 +353,10 @@ const handleSettingsAction = (action) => {
       // 导入导出保持在设置页面内，不关闭设置页面
       importExportDialog.value.open()
       break
+    case 'cleanupEmptyCategories':
+      // 清理空分类保持在设置页面内
+      handleCleanupEmptyCategories()
+      break
     case 'addBookmark':
       // 其他操作需要关闭设置页面
       settingsPage.value.close()
@@ -276,6 +373,70 @@ const handleSettingsAction = (action) => {
       break
   }
 }
+
+const checkEmptyCategories = async () => {
+  try {
+    const result = await getEmptyCategories()
+    if (result.success) {
+      emptyCategoryCount.value = result.count || 0
+    }
+  } catch (error) {
+    // 静默失败，不影响用户体验
+    console.error('Failed to check empty categories:', error)
+  }
+}
+
+const handleCleanupEmptyCategories = async () => {
+  // 先检查空分类数量
+  const result = await getEmptyCategories()
+  if (!result.success) {
+    toastError(result.error || '获取空分类失败')
+    return
+  }
+  
+  if (result.count === 0) {
+    toastError('当前没有空分类需要清理')
+    return
+  }
+  
+  // 构建确认消息
+  const categoryNames = result.emptyCategories.map(cat => `"${cat.name}"`).join('、')
+  const message = result.count === 1
+    ? `确定要删除空分类 ${categoryNames} 吗？`
+    : `确定要删除以下 ${result.count} 个空分类吗？\n\n${categoryNames}\n\n此操作不可恢复！`
+  
+  const confirmed = await confirmDialog.value.open(message, '清理空分类')
+  if (!confirmed) return
+  
+  // 执行清理
+  const cleanupResult = await cleanupEmptyCategories()
+  if (cleanupResult.success) {
+    if (cleanupResult.deletedCount === 0) {
+      toastError('没有空分类需要清理')
+    } else {
+      toastSuccess(`已成功清理 ${cleanupResult.deletedCount} 个空分类`)
+      // 更新空分类数量
+      emptyCategoryCount.value = 0
+    }
+  } else {
+    toastError(cleanupResult.error || '清理空分类失败')
+  }
+}
+
+// 监听数据变化，更新空分类数量（使用防抖）
+let checkEmptyCategoriesTimer = null
+watch([categories, bookmarks], async () => {
+  if (isAuthenticated.value) {
+    // 防抖：延迟 500ms 执行，避免频繁检查
+    if (checkEmptyCategoriesTimer) {
+      clearTimeout(checkEmptyCategoriesTimer)
+    }
+    checkEmptyCategoriesTimer = setTimeout(async () => {
+      await checkEmptyCategories()
+      checkEmptyCategoriesTimer = null
+    }, 500)
+  }
+})
 
 const handleAddCategory = async () => {
   const name = await promptDialog.value.open('新建分类', '', '请输入分类名称')
@@ -335,6 +496,118 @@ const handleDeleteBookmark = async (bookmark) => {
   }
 }
 
+const visibleBookmarkIds = computed(() => filteredBookmarks.value.map(bookmark => bookmark.id))
+
+const handleToggleBatchMode = () => {
+  if (!isBatchMode.value && filteredBookmarks.value.length === 0 && categories.value.length === 0) {
+    toastError('当前没有可操作的书签或分类')
+    return
+  }
+  if (!isBatchMode.value) {
+    clearSelection()
+    clearCategorySelection()
+  }
+  toggleBatchMode()
+}
+
+const handleSelectAll = () => {
+  if (!isBatchMode.value) return
+  if (visibleBookmarkIds.value.length === 0) {
+    toastError('当前没有可选择的书签')
+    return
+  }
+  deselectAll()
+  selectAll(visibleBookmarkIds.value)
+}
+
+const handleDeselectAll = () => {
+  if (!isBatchMode.value) return
+  deselectAll()
+}
+
+const handleInvertSelection = () => {
+  if (!isBatchMode.value) return
+  if (visibleBookmarkIds.value.length === 0) {
+    toastError('当前没有可选择的书签')
+    return
+  }
+  invertSelection(visibleBookmarkIds.value)
+}
+
+const handleToggleSelection = (bookmarkId) => {
+  if (!isBatchMode.value) return
+  toggleBookmarkSelection(bookmarkId)
+}
+
+const handleToggleCategorySelection = (categoryId) => {
+  if (!isBatchMode.value) return
+  toggleCategorySelection(categoryId)
+}
+
+const handleBatchDelete = async () => {
+  if (selectedCount.value === 0) {
+    toastError('请先选择需要删除的书签')
+    return
+  }
+  const dialogResult = await batchOperationDialog.value?.open('delete', selectedCount.value)
+  if (!dialogResult?.confirmed) return
+
+  const ids = getSelectedIds()
+  const result = await batchOperation('delete', ids)
+  if (result.success) {
+    toastSuccess(`已删除 ${ids.length} 个书签`)
+    clearSelection()
+  } else {
+    toastError(result.error || '批量删除失败')
+  }
+}
+
+const handleBatchMove = async () => {
+  if (selectedCount.value === 0) {
+    toastError('请先选择需要移动的书签')
+    return
+  }
+  if (categories.value.length === 0) {
+    toastError('请先创建分类')
+    return
+  }
+  const dialogResult = await batchOperationDialog.value?.open('move', selectedCount.value)
+  if (!dialogResult?.categoryId) return
+
+  const categoryId = parseInt(dialogResult.categoryId, 10)
+  if (Number.isNaN(categoryId)) {
+    toastError('请选择有效的分类')
+    return
+  }
+
+  const ids = getSelectedIds()
+  const result = await batchOperation('move', ids, { categoryId })
+  if (result.success) {
+    toastSuccess(`已移动 ${ids.length} 个书签`)
+    clearSelection()
+  } else {
+    toastError(result.error || '批量移动失败')
+  }
+}
+
+const handleBatchEdit = async () => {
+  if (selectedCount.value === 0) {
+    toastError('请先选择需要编辑的书签')
+    return
+  }
+  const dialogResult = await batchOperationDialog.value?.open('edit', selectedCount.value)
+  if (!dialogResult) return
+
+  const ids = getSelectedIds()
+  const result = await batchOperation('edit', ids, { isPrivate: dialogResult.isPrivate })
+  if (result.success) {
+    toastSuccess(`已更新 ${ids.length} 个书签的属性`)
+    clearSelection()
+  } else {
+    toastError(result.error || '批量编辑失败')
+  }
+}
+
 const handleReorderBookmarks = async (items) => {
   // 如果items包含category_id，说明是跨分类移动
   if (items[0]?.category_id) {
@@ -372,6 +645,24 @@ const handleEditFooter = async () => {
 
 const handleAddBookmark = () => {
   bookmarkDialog.value.open()
+}
+
+const handleBatchDeleteCategories = async () => {
+  if (selectedCategoryCount.value === 0) {
+    toastError('请先选择需要删除的分类')
+    return
+  }
+  const dialogResult = await batchOperationDialog.value?.open('delete-categories', selectedCategoryCount.value)
+  if (!dialogResult?.confirmed) return
+
+  const ids = getSelectedCategoryIds()
+  const result = await batchOperation('delete-categories', null, {}, ids)
+  if (result.success) {
+    toastSuccess(`已删除 ${ids.length} 个分类`)
+    clearCategorySelection()
+  } else {
+    toastError(result.error || '批量删除分类失败')
+  }
 }
 </script>
 
